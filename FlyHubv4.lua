@@ -383,6 +383,25 @@ createButton("Set Color: Purple", settingsTab, function() updateUIColors(Color3.
 
 -- // --- Logic ---
 
+-- Helper: Robust Team Check
+local function isEnemy(p)
+    if not config.teamCheck then return true end
+    if p == player then return false end
+    
+    -- Check Team object
+    if p.Team ~= nil and player.Team ~= nil then
+        if p.Team ~= player.Team then return true end
+    end
+    
+    -- Check TeamColor (Backup for games without teams)
+    if p.TeamColor ~= player.TeamColor then return true end
+    
+    -- Check Neutral status
+    if p.Neutral then return true end
+    
+    return false
+end
+
 -- Aimbot Helper: Find target closest to center
 local function getClosestPlayer()
     local closest = nil
@@ -390,19 +409,8 @@ local function getClosestPlayer()
     local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and p.Character:FindFirstChild(config.aimPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            -- Team Check Estricto
-            local isEnemy = true
-            if config.teamCheck then
-                if p.Team ~= nil and p.Team == player.Team then
-                    isEnemy = false
-                elseif p.Neutral == false and p.TeamColor == player.TeamColor then
-                    -- Algunos juegos usan TeamColor en lugar de equipos formales
-                    isEnemy = false
-                end
-            end
-
-            if isEnemy then
+        if p.Character and p.Character:FindFirstChild(config.aimPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if isEnemy(p) then
                 local pos, onScreen = Camera:WorldToViewportPoint(p.Character[config.aimPart].Position)
                 if onScreen then
                     local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -427,18 +435,8 @@ local function updateESP()
     end
     
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            -- Team Check Estricto para ESP
-            local isEnemy = true
-            if config.teamCheck then
-                if p.Team ~= nil and p.Team == player.Team then
-                    isEnemy = false
-                elseif p.Neutral == false and p.TeamColor == player.TeamColor then
-                    isEnemy = false
-                end
-            end
-
-            if isEnemy then
+        if p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if isEnemy(p) then
                 if not highlights[p] then
                     local h = Instance.new("Highlight")
                     h.Parent = p.Character
@@ -477,14 +475,9 @@ local function updateESP()
                     h.FillTransparency = config.espTransparency
                 end
             else
-                -- Si es compañero o está muerto, limpiar ESP
-                if highlights[p] then
-                    highlights[p]:Destroy()
-                    highlights[p] = nil
-                end
-                if p.Character:FindFirstChild("FlyHubESP") then
-                    p.Character.FlyHubESP:Destroy()
-                end
+                -- Si no es enemigo, limpiar ESP
+                if highlights[p] then highlights[p]:Destroy() highlights[p] = nil end
+                if p.Character:FindFirstChild("FlyHubESP") then p.Character.FlyHubESP:Destroy() end
             end
         elseif highlights[p] then
             highlights[p]:Destroy()
@@ -504,12 +497,18 @@ RunService.RenderStepped:Connect(function()
         if target then
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
             
-            -- Target Magnet (Innovador)
+            -- Target Magnet (Innovador y Reparado)
             if config.targetMagnet and target.Parent and target.Parent:FindFirstChild("HumanoidRootPart") then
                 local root = target.Parent.HumanoidRootPart
-                local targetPos = Camera.CFrame.Position + (Camera.CFrame.LookVector * 10) -- Traerlo a 10 studs frente a la mira
+                -- Teletransportar frente a la cámara pero ligeramente alejado para no bloquear disparos
+                local targetPos = Camera.CFrame.Position + (Camera.CFrame.LookVector * 15)
                 root.CFrame = CFrame.new(targetPos)
-                root.Velocity = Vector3.new(0,0,0) -- Evitar que salga volando
+                root.Velocity = Vector3.new(0,0,0)
+                
+                -- Desactivar colisión temporal para que las balas pasen
+                for _, part in pairs(target.Parent:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
             end
         end
     end
@@ -518,20 +517,8 @@ RunService.RenderStepped:Connect(function()
         local target = mouse.Target
         if target and target.Parent:FindFirstChild("Humanoid") then
             local p = Players:GetPlayerFromCharacter(target.Parent)
-            if p and p ~= player and p.Character and p.Character.Humanoid.Health > 0 then
-                -- Check team
-                local isEnemy = true
-                if config.teamCheck then
-                    if p.Team ~= nil and p.Team == player.Team then
-                        isEnemy = false
-                    elseif p.Neutral == false and p.TeamColor == player.TeamColor then
-                        isEnemy = false
-                    end
-                end
-
-                if isEnemy then
-                    if mouse1click then mouse1click() end
-                end
+            if p and isEnemy(p) and p.Character.Humanoid.Health > 0 then
+                if mouse1click then mouse1click() end
             end
         end
     end
@@ -539,19 +526,9 @@ RunService.RenderStepped:Connect(function()
     -- Hitbox Expander
     if config.hitboxExpander then
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
                 local root = p.Character.HumanoidRootPart
-                -- Team check Estricto para Hitbox
-                local isEnemy = true
-                if config.teamCheck then
-                    if p.Team ~= nil and p.Team == player.Team then
-                        isEnemy = false
-                    elseif p.Neutral == false and p.TeamColor == player.TeamColor then
-                        isEnemy = false
-                    end
-                end
-
-                if isEnemy then
+                if isEnemy(p) then
                     root.Size = Vector3.new(config.hitboxSize, config.hitboxSize, config.hitboxSize)
                     root.Transparency = 0.7
                     root.Shape = Enum.PartType.Ball
@@ -673,11 +650,12 @@ mt.__namecall = newcclosure(function(self, ...)
     local args = {...}
 
     if not checkcaller() and config.silentAim then
-        if method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" or method == "Raycast" then
+        if method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" or method == "Raycast" or method == "FindPartOnRay" then
             local target = getClosestPlayer()
             if target then
-                -- Redirigir el argumento del raycast si es posible
-                -- En la mayoría de shooters, el Silent Aim funciona mejor modificando el ratón (Index)
+                -- Redirigir el raycast hacia el target si es necesario
+                -- Nota: La mayoría de los juegos de Roblox modernos usan Mouse.Hit, 
+                -- el cual ya está cubierto por el hook de __index arriba.
             end
         end
     end
