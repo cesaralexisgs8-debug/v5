@@ -8,9 +8,9 @@
 ]]
 
 --// Configuration & Protection
-local scriptName = "FlyHubV3"
+local scriptName = "GS8HUB_V5"
 if getgenv and getgenv()[scriptName] then 
-    warn("[FlyHub] Script is already running!")
+    warn("[GS8 HUB] Script is already running!")
     return 
 end
 if getgenv then getgenv()[scriptName] = true end
@@ -98,6 +98,7 @@ end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = scriptName
+screenGui.DisplayOrder = 100 -- Asegurar que esté por encima de todo
 local success, err = pcall(function() screenGui.Parent = CoreGui end)
 if not success then screenGui.Parent = player:WaitForChild("PlayerGui") end
 screenGui.ResetOnSpawn = false
@@ -109,6 +110,7 @@ mainFrame.Size = UDim2.new(0, 450, 0, 320)
 mainFrame.Position = UDim2.new(0.5, -225, 0.4, -160)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 mainFrame.BorderSizePixel = 0
+mainFrame.Active = true -- Importante para capturar inputs
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
 
 local sidebar = Instance.new("Frame", mainFrame)
@@ -125,7 +127,7 @@ container.BackgroundTransparency = 1
 local header = Instance.new("Frame", mainFrame)
 header.Size = UDim2.new(1, 0, 0, 40)
 header.BackgroundTransparency = 1
-header.ZIndex = 5
+header.ZIndex = 20 -- Muy alto para evitar que lo tapen
 
 local title = Instance.new("TextLabel", header)
 title.Size = UDim2.new(1, -40, 1, 0)
@@ -137,6 +139,7 @@ title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 16
 title.Font = Enum.Font.GothamBold
 title.TextXAlignment = Enum.TextXAlignment.Left
+title.ZIndex = 21
 
 local closeBtn = Instance.new("TextButton", header)
 closeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -146,6 +149,7 @@ closeBtn.Text = "×"
 closeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
 closeBtn.TextSize = 24
 closeBtn.Font = Enum.Font.Gotham
+closeBtn.ZIndex = 22
 
 local minimizeBtn = Instance.new("TextButton", header)
 minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -155,6 +159,7 @@ minimizeBtn.Text = "-"
 minimizeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
 minimizeBtn.TextSize = 24
 minimizeBtn.Font = Enum.Font.Gotham
+minimizeBtn.ZIndex = 22
 
 -- Resize Handle
 local resizeHandle = Instance.new("Frame", mainFrame)
@@ -687,10 +692,11 @@ end)
 -- Dragging logic
 local dragging, dragStart, startPos
 header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
         dragging = true
         dragStart = input.Position
         startPos = mainFrame.Position
+        
         local connection
         connection = input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
@@ -700,6 +706,7 @@ header.InputBegan:Connect(function(input)
         end)
     end
 end)
+
 UserInputService.InputChanged:Connect(function(input)
     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
@@ -711,10 +718,11 @@ end)
 local resizing = false
 local resizeStartPos, startSize
 resizeHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
         resizing = true
         resizeStartPos = input.Position
         startSize = mainFrame.Size
+        
         local connection
         connection = input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
@@ -724,6 +732,7 @@ resizeHandle.InputBegan:Connect(function(input)
         end)
     end
 end)
+
 UserInputService.InputChanged:Connect(function(input)
     if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - resizeStartPos
@@ -735,23 +744,27 @@ end)
 
 -- Minimize Logic
 local isMinimized = false
-local lastSize = mainFrame.Size
+local lastSize = UDim2.new(0, 450, 0, 320)
 minimizeBtn.Activated:Connect(function()
     isMinimized = not isMinimized
     sidebar.Visible = not isMinimized
     container.Visible = not isMinimized
     resizeHandle.Visible = not isMinimized
+    
     if isMinimized then
         lastSize = mainFrame.Size
-        TweenService:Create(mainFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, mainFrame.Size.X.Offset, 0, 40)}):Play()
+        local targetSize = UDim2.new(0, mainFrame.Size.X.Offset, 0, 40)
+        TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = targetSize}):Play()
     else
-        TweenService:Create(mainFrame, TweenInfo.new(0.3), {Size = lastSize}):Play()
+        TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = lastSize}):Play()
     end
+    
     minimizeBtn.Text = isMinimized and "+" or "-"
 end)
 
 -- Close
 closeBtn.Activated:Connect(function()
+    stopFly()
     if fovCircle then fovCircle:Remove() end
     screenGui:Destroy()
     if getgenv then getgenv()[scriptName] = nil end
