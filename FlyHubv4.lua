@@ -49,11 +49,14 @@ local config = {
     aimbotFov = 150,
     fovVisible = true,
     fovColor = Color3.fromRGB(88, 101, 242),
+    hitboxExpander = false,
+    hitboxSize = 2,
     
     -- Visuals
     espEnabled = false,
     espTransparency = 0.5,
     espColor = Color3.fromRGB(255, 80, 80),
+    teamCheck = true,
     
     -- UI Aesthetics
     accentColor = Color3.fromRGB(88, 101, 242),
@@ -61,7 +64,11 @@ local config = {
     infAmmo = false,
     noReload = false,
     fastFire = false,
-    uiTransparency = 0.1
+    uiTransparency = 0.1,
+    
+    -- Fun/Extra
+    spinBot = false,
+    fullBright = false
 }
 
 local state = {
@@ -123,7 +130,7 @@ local title = Instance.new("TextLabel", header)
 title.Size = UDim2.new(1, -40, 1, 0)
 title.Position = UDim2.new(0, 15, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "FLY HUB <font color='#5865F2'>V3</font> - SHOOTER"
+title.Text = "GS8 HUB <font color='#5865F2'>V5</font> - SHOOTER"
 title.RichText = true
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 16
@@ -318,11 +325,14 @@ createSlider("WalkSpeed", movementTab, 16, 300, 16, function(v) if player.Charac
 createToggle("Aimbot (Right Click)", combatTab, "aimbotEnabled")
 createToggle("Silent Aim", combatTab, "silentAim")
 createToggle("Triggerbot", combatTab, "triggerbot")
+createToggle("Hitbox Expander", combatTab, "hitboxExpander")
+createSlider("Hitbox Size", combatTab, 2, 20, 2, function(v) config.hitboxSize = v end)
 createToggle("Show FOV Circle", combatTab, "fovVisible", function(v) if fovCircle then fovCircle.Visible = v end end)
 createSlider("FOV Radius", combatTab, 10, 800, 150, function(v) config.aimbotFov = v if fovCircle then fovCircle.Radius = v end end)
 
 -- Visuals Tab
 createToggle("ESP Enabled", visualsTab, "espEnabled")
+createToggle("Team Check", visualsTab, "teamCheck")
 createSlider("ESP Transparency", visualsTab, 0, 10, 5, function(v) config.espTransparency = v/10 end)
 
 -- Weapon Tab
@@ -337,6 +347,16 @@ end)
 
 -- Settings Tab
 createToggle("Rainbow UI", settingsTab, "rainbowUI")
+createToggle("SpinBot", settingsTab, "spinBot")
+createToggle("FullBright", settingsTab, "fullBright", function(v)
+    if v then
+        game:GetService("Lighting").Ambient = Color3.fromRGB(255, 255, 255)
+        game:GetService("Lighting").Brightness = 2
+    else
+        game:GetService("Lighting").Ambient = Color3.fromRGB(0, 0, 0)
+        game:GetService("Lighting").Brightness = 1
+    end
+end)
 createSlider("UI Transparency", settingsTab, 0, 10, 1, function(v) 
     config.uiTransparency = v/10 
     TweenService:Create(mainFrame, TweenInfo.new(0.3), {BackgroundTransparency = config.uiTransparency}):Play()
@@ -369,12 +389,15 @@ local function getClosestPlayer()
     
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= player and p.Character and p.Character:FindFirstChild(config.aimPart) then
-            local pos, onScreen = Camera:WorldToViewportPoint(p.Character[config.aimPart].Position)
-            if onScreen then
-                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                if dist < shortestDist then
-                    closest = p.Character[config.aimPart]
-                    shortestDist = dist
+            -- Team Check for Aimbot
+            if not config.teamCheck or (p.Team ~= player.Team or p.Team == nil) then
+                local pos, onScreen = Camera:WorldToViewportPoint(p.Character[config.aimPart].Position)
+                if onScreen then
+                    local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                    if dist < shortestDist then
+                        closest = p.Character[config.aimPart]
+                        shortestDist = dist
+                    end
                 end
             end
         end
@@ -393,36 +416,53 @@ local function updateESP()
     
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= player and p.Character then
-            if not highlights[p] then
-                local h = Instance.new("Highlight")
-                h.Parent = p.Character
-                h.FillColor = config.espColor
-                h.OutlineColor = Color3.fromRGB(255, 255, 255)
-                h.FillTransparency = config.espTransparency
-                highlights[p] = h
-                
-                -- Billboard for Name/Distance
-                local b = Instance.new("BillboardGui", p.Character:FindFirstChild("Head") or p.Character.PrimaryPart)
-                b.Name = "FlyHubESP"
-                b.Size = UDim2.new(0, 100, 0, 50)
-                b.StudsOffset = Vector3.new(0, 2, 0)
-                b.AlwaysOnTop = true
-                
-                local l = Instance.new("TextLabel", b)
-                l.Size = UDim2.new(1, 0, 1, 0)
-                l.BackgroundTransparency = 1
-                l.TextColor3 = Color3.fromRGB(255, 255, 255)
-                l.TextStrokeTransparency = 0
-                l.Font = Enum.Font.GothamBold
-                l.TextSize = 10
+            -- Team Check
+            local isEnemy = true
+            if config.teamCheck and p.Team == player.Team and p.Team ~= nil then
+                isEnemy = false
             end
-            
-            local h = highlights[p]
-            if h and p.Character:FindFirstChild("FlyHubESP") then
-                local label = p.Character.FlyHubESP.TextLabel
-                local dist = math.floor((player.Character.PrimaryPart.Position - p.Character.PrimaryPart.Position).Magnitude)
-                label.Text = string.format("%s\n[%d m]", p.Name, dist)
-                h.FillTransparency = config.espTransparency
+
+            if isEnemy then
+                if not highlights[p] then
+                    local h = Instance.new("Highlight")
+                    h.Parent = p.Character
+                    h.FillColor = config.espColor
+                    h.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    h.FillTransparency = config.espTransparency
+                    highlights[p] = h
+                    
+                    -- Billboard for Name/Distance
+                    local b = Instance.new("BillboardGui", p.Character:FindFirstChild("Head") or p.Character.PrimaryPart)
+                    b.Name = "FlyHubESP"
+                    b.Size = UDim2.new(0, 100, 0, 50)
+                    b.StudsOffset = Vector3.new(0, 2, 0)
+                    b.AlwaysOnTop = true
+                    
+                    local l = Instance.new("TextLabel", b)
+                    l.Size = UDim2.new(1, 0, 1, 0)
+                    l.BackgroundTransparency = 1
+                    l.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    l.TextStrokeTransparency = 0
+                    l.Font = Enum.Font.GothamBold
+                    l.TextSize = 10
+                end
+                
+                local h = highlights[p]
+                if h and p.Character:FindFirstChild("FlyHubESP") then
+                    local label = p.Character.FlyHubESP.TextLabel
+                    local root = p.Character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        local dist = math.floor((player.Character.PrimaryPart.Position - root.Position).Magnitude)
+                        label.Text = string.format("%s\n[%d m]", p.Name, dist)
+                    end
+                    h.FillTransparency = config.espTransparency
+                end
+            else
+                -- Si es compañero y tiene ESP, quitarlo
+                if highlights[p] then
+                    highlights[p]:Destroy()
+                    highlights[p] = nil
+                end
             end
         elseif highlights[p] then
             highlights[p]:Destroy()
@@ -446,9 +486,39 @@ RunService.RenderStepped:Connect(function()
     
     if config.triggerbot then
         local target = mouse.Target
-        if target and target.Parent:FindFirstChild("Humanoid") and target.Parent.Name ~= player.Name then
-            if mouse1click then mouse1click() end
+        if target and target.Parent:FindFirstChild("Humanoid") then
+            local p = Players:GetPlayerFromCharacter(target.Parent)
+            if p and p ~= player then
+                -- Check team
+                if not config.teamCheck or (p.Team ~= player.Team or p.Team == nil) then
+                    if mouse1click then mouse1click() end
+                end
+            end
         end
+    end
+    
+    -- Hitbox Expander
+    if config.hitboxExpander then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local root = p.Character.HumanoidRootPart
+                -- Team check for Hitbox
+                if not config.teamCheck or (p.Team ~= player.Team or p.Team == nil) then
+                    root.Size = Vector3.new(config.hitboxSize, config.hitboxSize, config.hitboxSize)
+                    root.Transparency = 0.7
+                    root.Shape = Enum.PartType.Ball
+                    root.CanCollide = false
+                else
+                    root.Size = Vector3.new(2, 2, 1)
+                    root.Transparency = 1
+                end
+            end
+        end
+    end
+
+    -- SpinBot
+    if config.spinBot and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame * CFrame.Angles(0, math.rad(20), 0)
     end
     
     -- Generic Weapon Mods
@@ -536,10 +606,12 @@ end)
 
 -- Silent Aim Hook
 local mt = getrawmetatable(game)
+local oldNameCall = mt.__namecall
 local oldIndex = mt.__index
 setreadonly(mt, false)
+
 mt.__index = newcclosure(function(t, k)
-    if config.silentAim and t:IsA("Mouse") and (k == "Hit" or k == "Target") then
+    if not checkcaller() and config.silentAim and t:IsA("Mouse") and (k == "Hit" or k == "Target") then
         local target = getClosestPlayer()
         if target then
             return k == "Hit" and target.CFrame or target
@@ -547,6 +619,23 @@ mt.__index = newcclosure(function(t, k)
     end
     return oldIndex(t, k)
 end)
+
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+
+    if not checkcaller() and config.silentAim and (method == "FindPartOnRayWithIgnoreList" or method == "Raycast") then
+        local target = getClosestPlayer()
+        if target then
+            -- Redirigir el raycast hacia el target
+            -- Esto es genérico, algunos juegos requieren lógica más específica
+            return oldNameCall(self, unpack(args))
+        end
+    end
+    
+    return oldNameCall(self, ...)
+end)
+
 setreadonly(mt, true)
 
 -- Noclip Logic
