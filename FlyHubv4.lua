@@ -68,7 +68,8 @@ local config = {
     
     -- Fun/Extra
     spinBot = false,
-    fullBright = false
+    fullBright = false,
+    targetMagnet = false
 }
 
 local state = {
@@ -348,6 +349,7 @@ end)
 -- Settings Tab
 createToggle("Rainbow UI", settingsTab, "rainbowUI")
 createToggle("SpinBot", settingsTab, "spinBot")
+createToggle("Target Magnet", settingsTab, "targetMagnet")
 createToggle("FullBright", settingsTab, "fullBright", function(v)
     if v then
         game:GetService("Lighting").Ambient = Color3.fromRGB(255, 255, 255)
@@ -388,9 +390,19 @@ local function getClosestPlayer()
     local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character and p.Character:FindFirstChild(config.aimPart) then
-            -- Team Check for Aimbot
-            if not config.teamCheck or (p.Team ~= player.Team or p.Team == nil) then
+        if p ~= player and p.Character and p.Character:FindFirstChild(config.aimPart) and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            -- Team Check Estricto
+            local isEnemy = true
+            if config.teamCheck then
+                if p.Team ~= nil and p.Team == player.Team then
+                    isEnemy = false
+                elseif p.Neutral == false and p.TeamColor == player.TeamColor then
+                    -- Algunos juegos usan TeamColor en lugar de equipos formales
+                    isEnemy = false
+                end
+            end
+
+            if isEnemy then
                 local pos, onScreen = Camera:WorldToViewportPoint(p.Character[config.aimPart].Position)
                 if onScreen then
                     local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -415,11 +427,15 @@ local function updateESP()
     end
     
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character then
-            -- Team Check
+        if p ~= player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            -- Team Check Estricto para ESP
             local isEnemy = true
-            if config.teamCheck and p.Team == player.Team and p.Team ~= nil then
-                isEnemy = false
+            if config.teamCheck then
+                if p.Team ~= nil and p.Team == player.Team then
+                    isEnemy = false
+                elseif p.Neutral == false and p.TeamColor == player.TeamColor then
+                    isEnemy = false
+                end
             end
 
             if isEnemy then
@@ -432,19 +448,22 @@ local function updateESP()
                     highlights[p] = h
                     
                     -- Billboard for Name/Distance
-                    local b = Instance.new("BillboardGui", p.Character:FindFirstChild("Head") or p.Character.PrimaryPart)
-                    b.Name = "FlyHubESP"
-                    b.Size = UDim2.new(0, 100, 0, 50)
-                    b.StudsOffset = Vector3.new(0, 2, 0)
-                    b.AlwaysOnTop = true
-                    
-                    local l = Instance.new("TextLabel", b)
-                    l.Size = UDim2.new(1, 0, 1, 0)
-                    l.BackgroundTransparency = 1
-                    l.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    l.TextStrokeTransparency = 0
-                    l.Font = Enum.Font.GothamBold
-                    l.TextSize = 10
+                    local head = p.Character:FindFirstChild("Head") or p.Character.PrimaryPart
+                    if head then
+                        local b = Instance.new("BillboardGui", head)
+                        b.Name = "FlyHubESP"
+                        b.Size = UDim2.new(0, 100, 0, 50)
+                        b.StudsOffset = Vector3.new(0, 2, 0)
+                        b.AlwaysOnTop = true
+                        
+                        local l = Instance.new("TextLabel", b)
+                        l.Size = UDim2.new(1, 0, 1, 0)
+                        l.BackgroundTransparency = 1
+                        l.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        l.TextStrokeTransparency = 0
+                        l.Font = Enum.Font.GothamBold
+                        l.TextSize = 10
+                    end
                 end
                 
                 local h = highlights[p]
@@ -458,10 +477,13 @@ local function updateESP()
                     h.FillTransparency = config.espTransparency
                 end
             else
-                -- Si es compañero y tiene ESP, quitarlo
+                -- Si es compañero o está muerto, limpiar ESP
                 if highlights[p] then
                     highlights[p]:Destroy()
                     highlights[p] = nil
+                end
+                if p.Character:FindFirstChild("FlyHubESP") then
+                    p.Character.FlyHubESP:Destroy()
                 end
             end
         elseif highlights[p] then
@@ -481,6 +503,14 @@ RunService.RenderStepped:Connect(function()
         local target = getClosestPlayer()
         if target then
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
+            
+            -- Target Magnet (Innovador)
+            if config.targetMagnet and target.Parent and target.Parent:FindFirstChild("HumanoidRootPart") then
+                local root = target.Parent.HumanoidRootPart
+                local targetPos = Camera.CFrame.Position + (Camera.CFrame.LookVector * 10) -- Traerlo a 10 studs frente a la mira
+                root.CFrame = CFrame.new(targetPos)
+                root.Velocity = Vector3.new(0,0,0) -- Evitar que salga volando
+            end
         end
     end
     
@@ -488,9 +518,18 @@ RunService.RenderStepped:Connect(function()
         local target = mouse.Target
         if target and target.Parent:FindFirstChild("Humanoid") then
             local p = Players:GetPlayerFromCharacter(target.Parent)
-            if p and p ~= player then
+            if p and p ~= player and p.Character and p.Character.Humanoid.Health > 0 then
                 -- Check team
-                if not config.teamCheck or (p.Team ~= player.Team or p.Team == nil) then
+                local isEnemy = true
+                if config.teamCheck then
+                    if p.Team ~= nil and p.Team == player.Team then
+                        isEnemy = false
+                    elseif p.Neutral == false and p.TeamColor == player.TeamColor then
+                        isEnemy = false
+                    end
+                end
+
+                if isEnemy then
                     if mouse1click then mouse1click() end
                 end
             end
@@ -500,10 +539,19 @@ RunService.RenderStepped:Connect(function()
     -- Hitbox Expander
     if config.hitboxExpander then
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
                 local root = p.Character.HumanoidRootPart
-                -- Team check for Hitbox
-                if not config.teamCheck or (p.Team ~= player.Team or p.Team == nil) then
+                -- Team check Estricto para Hitbox
+                local isEnemy = true
+                if config.teamCheck then
+                    if p.Team ~= nil and p.Team == player.Team then
+                        isEnemy = false
+                    elseif p.Neutral == false and p.TeamColor == player.TeamColor then
+                        isEnemy = false
+                    end
+                end
+
+                if isEnemy then
                     root.Size = Vector3.new(config.hitboxSize, config.hitboxSize, config.hitboxSize)
                     root.Transparency = 0.7
                     root.Shape = Enum.PartType.Ball
@@ -624,12 +672,13 @@ mt.__namecall = newcclosure(function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
 
-    if not checkcaller() and config.silentAim and (method == "FindPartOnRayWithIgnoreList" or method == "Raycast") then
-        local target = getClosestPlayer()
-        if target then
-            -- Redirigir el raycast hacia el target
-            -- Esto es genérico, algunos juegos requieren lógica más específica
-            return oldNameCall(self, unpack(args))
+    if not checkcaller() and config.silentAim then
+        if method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" or method == "Raycast" then
+            local target = getClosestPlayer()
+            if target then
+                -- Redirigir el argumento del raycast si es posible
+                -- En la mayoría de shooters, el Silent Aim funciona mejor modificando el ratón (Index)
+            end
         end
     end
     
